@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Chromatype — A Chromatype for living stories</title>
+<title>SpectraMuse — Where stories become color, sound, and motion</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2309080b'/%3E%3Ccircle cx='22' cy='24' r='14' fill='%23ffcc7a'/%3E%3Ccircle cx='42' cy='40' r='16' fill='%237ac7ff' fill-opacity='.82'/%3E%3Cpath d='M17 45h30' stroke='%23f8efe2' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
 <style>
   :root {
@@ -317,13 +317,13 @@
 <main class="studio">
   <section class="topbar">
     <div>
-      <h1>Synesthetic<br>Typewriter</h1>
+      <h1>SpectraMuse</h1>
       <div class="subcopy">
-        A Synesthetic Typewriter for living stories.<br>
-        Write a story, then record it as moving color, texture, and sound.
+        Where stories become color, sound, and motion.<br>
+        A living story engine for sensory storytelling.
       </div>
     </div>
-    <div class="badge">A Synesthetic Typewriter for living stories</div>
+    <div class="badge">Where stories become color, sound, and motion.</div>
   </section>
 
   <section class="workspace">
@@ -756,7 +756,7 @@ function renderStoryFrame(targetCtx, width, height, text, localT, format="wide")
   targetCtx.textAlign = "center";
   targetCtx.textBaseline = "middle";
   targetCtx.font = `700 ${titleSize}px Courier New, monospace`;
-  targetCtx.fillText("Chromatype", width / 2, cardY + titleSize * 1.4);
+  targetCtx.fillText("SpectraMuse", width / 2, cardY + titleSize * 1.4);
 
   targetCtx.font = `800 ${textSize}px Courier New, monospace`;
   const maxTextWidth = cardW * 0.78;
@@ -927,7 +927,7 @@ async function startRecorder(format, audio) {
       const blob = new Blob(chunks, { type: mimeType || "video/webm" });
       lastRecordedBlob = blob;
       const url = URL.createObjectURL(blob);
-      triggerDownload(url, `chromatype-${format}.webm`);
+      triggerDownload(url, `spectramuse-${format}.webm`);
       setTimeout(() => URL.revokeObjectURL(url), 3000);
       resolve(blob);
     };
@@ -1058,9 +1058,9 @@ function captionText() {
   const text = storyInput.value.trim();
   return `${text}
 
-Made with Chromatype — a story that turns words into color, texture, motion, and sound.
+Made with SpectraMuse — where stories become color, sound, and motion.
 
-#Chromatype #DigitalStorytelling #VisualPoetry #SoundArt`;
+#SpectraMuse #DigitalStorytelling #VisualPoetry #SoundArt`;
 }
 
 function makeStoryboardText() {
@@ -1080,12 +1080,12 @@ copyButton.addEventListener("click", async () => {
 });
 
 downloadTextButton.addEventListener("click", () => {
-  download("chromatype-story.txt", captionText());
+  download("spectramuse-story.txt", captionText());
   statusEl.textContent = "Story text downloaded.";
 });
 
 downloadStoryboardButton.addEventListener("click", () => {
-  download("chromatype-storyboard.txt", makeStoryboardText());
+  download("spectramuse-storyboard.txt", makeStoryboardText());
   statusEl.textContent = "Storyboard downloaded.";
 });
 
@@ -1101,7 +1101,7 @@ downloadImageButton.addEventListener("click", () => {
 
   try {
     const url = out.toDataURL("image/png");
-    triggerDownload(url, `chromatype-${format}.png`);
+    triggerDownload(url, `spectramuse-${format}.png`);
     statusEl.textContent = "Visual card saved.";
   } catch {
     markFeatureUnsupported("canvasExport", "Canvas image export failed in this browser.");

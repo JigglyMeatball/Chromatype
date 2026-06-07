@@ -1,8 +1,8 @@
-# Chromatype
+# SpectraMuse
 
-**A Synesthetic Typewriter for living stories.**
+**Where stories become color, sound, and motion.**
 
-Chromatype is a static browser app that turns typed stories into animated color, texture, motion, and generated sound. Creators can perform a story, record it as a `.webm` video, save visual cards, and copy social-ready captions.
+SpectraMuse is a static browser app and living story engine for sensory storytelling. It turns typed stories into animated color, texture, motion, and generated sound. Creators can perform a story, record it as a `.webm` video, save visual cards, and copy social-ready captions.
 
 ## Files
 
