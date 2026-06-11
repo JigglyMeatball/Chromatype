@@ -165,10 +165,11 @@
   .volume-slider {
     width: 100%;
     min-width: 0;
-    height: 28px;
+    height: 40px;
     margin: 0;
     accent-color: var(--accent);
     cursor: pointer;
+    touch-action: manipulation;
   }
 
   .setup-button {
@@ -469,6 +470,7 @@
     font: 800 .93rem "Courier New", Courier, monospace;
     cursor: pointer;
     box-shadow: 0 10px 24px rgba(0,0,0,.25);
+    touch-action: manipulation;
   }
 
   button.secondary, select {
@@ -543,15 +545,32 @@
   @media (max-width: 540px) {
     .topbar { flex-direction: column; }
     .top-actions { width: 100%; margin-left: 0; flex-direction: column; }
-    .display-control { width: 100%; }
-    .volume-control { width: 100%; }
+    .display-control,
+    .volume-control {
+      width: 100%;
+      flex: 0 0 auto;
+    }
+    .studio {
+      width: calc(100vw - 16px);
+      padding: 14px;
+      border-radius: 20px;
+    }
+    .editor,
+    .viewer {
+      padding: 12px;
+      border-radius: 16px;
+    }
     .setup-wrap { width: 100%; margin-left: 0; }
     .setup-button { width: 100%; }
     .setup-dropdown { left: 0; right: auto; width: 100%; }
     .actions { grid-template-columns: 1fr; }
+    textarea {
+      min-height: 320px;
+      padding: 14px;
+    }
     .story-card {
       height: clamp(230px, 58vw, 300px);
-      padding: 18px;
+      padding: 16px;
     }
   }
 </style>
