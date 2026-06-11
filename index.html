@@ -685,15 +685,15 @@ Thunder wrote its name across the sky."></textarea>
   <section class="actions">
     <button id="playButton">Preview Story</button>
     <button id="sceneButton" class="secondary">Preview Scene</button>
-    <button id="recordButton" class="record">Record Story</button>
-    <button id="performAndSaveSceneButton" class="secondary">Record Scene</button>
+    <button id="recordButton" class="record">Save Story Video</button>
+    <button id="performAndSaveSceneButton" class="secondary">Save Scene Video</button>
     <button id="downloadImageButton" class="secondary">Save Image</button>
     <button id="copyButton" class="secondary">Copy Caption</button>
     <button id="downloadTextButton" class="secondary">Download Story</button>
     <button id="downloadStoryboardButton" class="secondary">Storyboard</button>
     <button id="loadSampleButton" class="secondary">Load Sample</button>
     <button id="clearButton" class="secondary">Clear Story</button>
-    <button id="stopRecordButton" class="stop secondary" hidden>stop recording</button>
+    <button id="stopRecordButton" class="stop secondary" hidden>Stop Recording</button>
   </section>
 
   <section class="statusbar">
@@ -755,6 +755,21 @@ const AUDIO_SETTINGS_KEY = "spectramuseAudioSettings.v1";
 const MIN_VOLUME = 0;
 const MAX_VOLUME = 2;
 const DEFAULT_VOLUME = 0.8;
+const STORY_WORD_MS = 360;
+const STORY_SEGMENT_HOLD_MS = 520;
+const STORY_INTRO_HOLD_MS = 600;
+const STORY_FINAL_HOLD_MS = 1800;
+const RECORDER_STOP_TIMEOUT_MS = 8000;
+const VIDEO_RECORDING_TYPES = [
+  { mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: "mp4", label: "MP4" },
+  { mimeType: "video/mp4;codecs=avc1.64001F,mp4a.40.2", extension: "mp4", label: "MP4" },
+  { mimeType: "video/mp4;codecs=h264,mp4a.40.2", extension: "mp4", label: "MP4" },
+  { mimeType: "video/mp4", extension: "mp4", label: "MP4" },
+  { mimeType: "video/webm;codecs=vp9,opus", extension: "webm", label: "WebM" },
+  { mimeType: "video/webm;codecs=vp8,opus", extension: "webm", label: "WebM" },
+  { mimeType: "video/webm", extension: "webm", label: "WebM" }
+];
+const DEFAULT_RECORDING_TYPE = { mimeType: "", extension: "webm", label: "WebM", browserDefault: true };
 let displayMode = DEFAULT_DISPLAY_MODE;
 let audioSettings = {
   volume: DEFAULT_VOLUME,
@@ -919,6 +934,47 @@ function getAudioContextConstructor() {
   return window.AudioContext || window.webkitAudioContext || null;
 }
 
+function canCheckRecordingMimeTypes() {
+  return typeof window.MediaRecorder === "function" && typeof window.MediaRecorder.isTypeSupported === "function";
+}
+
+function getSupportedRecordingTypes() {
+  if (!canCheckRecordingMimeTypes()) return [];
+  return VIDEO_RECORDING_TYPES.filter(type => MediaRecorder.isTypeSupported(type.mimeType));
+}
+
+function getPreferredRecordingType() {
+  const supported = getSupportedRecordingTypes();
+  return supported[0] || DEFAULT_RECORDING_TYPE;
+}
+
+function getRecordingButtonDetails() {
+  const preferred = getPreferredRecordingType();
+  const savesMp4 = preferred.extension === "mp4";
+  return {
+    storyLabel: savesMp4 ? "Save MP4 Story" : "Save Story Video",
+    sceneLabel: savesMp4 ? "Save MP4 Scene" : "Save Scene Video",
+    title: savesMp4
+      ? "Record and download an MP4 story video."
+      : "MP4 is not supported in this browser; records and downloads WebM video instead."
+  };
+}
+
+function getRecordingFormatStatus() {
+  if (!featureSupport.recording) return "";
+  const preferred = getPreferredRecordingType();
+  if (preferred.extension === "mp4") return "Ready. Story videos will save as MP4.";
+  return "MP4 is not supported in this browser, so story videos will save as WebM instead.";
+}
+
+function getRecordingFileInfo(mimeType, fallback = DEFAULT_RECORDING_TYPE) {
+  const baseType = (mimeType || "").split(";")[0].trim().toLowerCase();
+  if (baseType === "video/mp4") return { extension: "mp4", label: "MP4" };
+  if (baseType === "video/webm") return { extension: "webm", label: "WebM" };
+  if (baseType === "video/ogg") return { extension: "ogv", label: "Ogg" };
+  return { extension: fallback.extension || "webm", label: fallback.label || "WebM" };
+}
+
 function detectFeatures() {
   const testCanvas = document.createElement("canvas");
   let testCtx = null;
@@ -979,8 +1035,8 @@ const featureControls = [
   { button: playButton, feature: "audioStart", label: "audio unavailable" },
   { button: sceneButton, feature: "audioStart", label: "audio unavailable" },
   { button: stopRecordButton, supported: () => featureSupport.audioStart || featureSupport.recording, label: "stop unavailable", reason: unsupportedMessages.audioStart },
-  { button: recordButton, feature: "recording", label: "recording unavailable" },
-  { button: performAndSaveSceneButton, feature: "recording", label: "recording unavailable" },
+  { button: recordButton, feature: "recording", label: "video unavailable" },
+  { button: performAndSaveSceneButton, feature: "recording", label: "video unavailable" },
   { button: downloadImageButton, feature: "canvasExport", label: "export unavailable" },
   { button: copyButton, feature: "clipboard", label: "copy unavailable" }
 ];
@@ -1004,9 +1060,15 @@ function refreshActionAvailability() {
       return;
     }
 
-    button.textContent = defaults.label;
-    if (defaults.title) button.title = defaults.title;
-    else button.removeAttribute("title");
+    if (button === recordButton || button === performAndSaveSceneButton) {
+      const details = getRecordingButtonDetails();
+      button.textContent = button === recordButton ? details.storyLabel : details.sceneLabel;
+      button.title = details.title;
+    } else {
+      button.textContent = defaults.label;
+      if (defaults.title) button.title = defaults.title;
+      else button.removeAttribute("title");
+    }
     button.removeAttribute("aria-disabled");
     button.disabled = isPerforming && busyControls.has(button);
   });
@@ -1023,7 +1085,11 @@ function getUnsupportedSummary() {
 
 function showInitialCompatibilityStatus() {
   const summary = getUnsupportedSummary();
-  if (summary) statusEl.textContent = `Unsupported here: ${summary}`;
+  const recordingFormatStatus = getRecordingFormatStatus();
+  const messages = [];
+  if (summary) messages.push(`Unsupported here: ${summary}`);
+  if (recordingFormatStatus) messages.push(recordingFormatStatus);
+  if (messages.length) statusEl.textContent = messages.join(" ");
 }
 
 function requireFeature(feature) {
@@ -1101,6 +1167,7 @@ let activeRecorder = null;
 let activeRecordingMode = false;
 let currentDisplayText = "Your living story will appear here.";
 let lastRecordedBlob = null;
+let lastExportStats = null;
 
 function resize() {
   if (!ctx) return;
@@ -1261,6 +1328,105 @@ function wrapLines(c, text, maxWidth) {
   return lines;
 }
 
+function getStoryFrameLayout(width, height, format="wide") {
+  const cardMargin = Math.round(width * 0.10);
+  const cardW = width - cardMargin * 2;
+  const cardH = height - Math.round(height * 0.28);
+  const cardX = cardMargin;
+  const cardY = Math.round(height * 0.14);
+  const radius = Math.max(24, Math.round(width * 0.024));
+  const titleSize = Math.round(width * (format === "vertical" ? 0.028 : 0.02));
+  const textSize = Math.round(width * (format === "vertical" ? 0.048 : format === "square" ? 0.044 : 0.036));
+  const metaSize = Math.round(width * (format === "vertical" ? 0.023 : 0.018));
+  const lineHeight = textSize * 1.32;
+  const titleBottom = cardY + titleSize * 2.25;
+  const metaTop = cardY + cardH - metaSize * 2.65;
+  const availableTextHeight = Math.max(lineHeight, metaTop - titleBottom);
+  const frameLineCapacity = Math.max(1, Math.floor(availableTextHeight / lineHeight));
+
+  return {
+    cardW,
+    cardH,
+    cardX,
+    cardY,
+    radius,
+    titleSize,
+    textSize,
+    metaSize,
+    lineHeight,
+    maxTextWidth: cardW * 0.78,
+    frameLineCapacity
+  };
+}
+
+function measureStoryLines(targetCtx, text, width, height, format="wide") {
+  if (!targetCtx) return [];
+  const layout = getStoryFrameLayout(width, height, format);
+  targetCtx.save();
+  targetCtx.font = `800 ${layout.textSize}px Courier New, monospace`;
+  const lines = wrapLines(targetCtx, text, layout.maxTextWidth);
+  targetCtx.restore();
+  return lines;
+}
+
+function splitSceneForFrame(targetCtx, scene, width, height, format="wide") {
+  const words = (scene || "").split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const layout = getStoryFrameLayout(width, height, format);
+  const chunks = [];
+  let chunk = "";
+
+  targetCtx.save();
+  targetCtx.font = `800 ${layout.textSize}px Courier New, monospace`;
+
+  words.forEach(word => {
+    const candidate = chunk ? `${chunk} ${word}` : word;
+    const candidateLines = wrapLines(targetCtx, candidate, layout.maxTextWidth);
+
+    if (candidateLines.length > layout.frameLineCapacity && chunk) {
+      chunks.push(chunk);
+      chunk = word;
+      return;
+    }
+
+    chunk = candidate;
+  });
+
+  if (chunk) chunks.push(chunk);
+  targetCtx.restore();
+  return chunks;
+}
+
+function buildStorySegments(text, options = {}) {
+  const { currentOnly = false, targetCtx = null, width = 0, height = 0, format = "wide" } = options;
+  const scenes = currentOnly ? getScenes(text).slice(-1) : getScenes(text);
+  const segments = [];
+
+  scenes.forEach((scene, sceneIndex) => {
+    const parts = targetCtx && width && height
+      ? splitSceneForFrame(targetCtx, scene, width, height, format)
+      : [scene];
+    const visibleParts = parts.length ? parts : [scene];
+    visibleParts.forEach((part, partIndex) => {
+      segments.push({
+        text: part,
+        sceneIndex,
+        partIndex,
+        partCount: visibleParts.length
+      });
+    });
+  });
+
+  return segments.filter(segment => segment.text && segment.text.trim());
+}
+
+function getExpectedPerformanceDurationMs(segments, { record = false } = {}) {
+  const baseMs = segments.reduce((sum, segment) => {
+    return sum + getWords(segment.text).length * STORY_WORD_MS + STORY_SEGMENT_HOLD_MS;
+  }, 0);
+  return baseMs + (record ? STORY_INTRO_HOLD_MS + STORY_FINAL_HOLD_MS : 0);
+}
+
 const CANVAS_DISPLAY_COLORS = {
   spectraColor: ["#ffd27a", "#7bd3ff", "#f79ac8", "#bda2ff", "#8ee9d6", "#f8efe2"],
   colorblindFriendly: ["#56b4e9", "#e6ab02", "#cc79a7", "#00b8a9", "#f0e442", "#f8efe2"]
@@ -1325,12 +1491,8 @@ function renderStoryFrame(targetCtx, width, height, text, localT, format="wide")
   targetCtx.fillStyle = highContrast ? "rgba(0, 0, 0, .64)" : "rgba(8, 7, 12, .30)";
   targetCtx.fillRect(0, 0, width, height);
 
-  const cardMargin = Math.round(width * 0.10);
-  const cardW = width - cardMargin * 2;
-  const cardH = height - Math.round(height * 0.28);
-  const cardX = cardMargin;
-  const cardY = Math.round(height * 0.14);
-  const radius = Math.max(24, Math.round(width * 0.024));
+  const layout = getStoryFrameLayout(width, height, format);
+  const { cardW, cardH, cardX, cardY, radius, titleSize, textSize, metaSize } = layout;
 
   targetCtx.fillStyle = highContrast ? "rgba(0, 0, 0, .82)" : "rgba(8, 7, 12, .36)";
   targetCtx.strokeStyle = highContrast ? "rgba(255, 255, 255, .76)" : "rgba(248, 239, 226, .18)";
@@ -1348,10 +1510,6 @@ function renderStoryFrame(targetCtx, width, height, text, localT, format="wide")
     roundRect(targetCtx, cardX, cardY, cardW, cardH, radius, true, false);
   }
 
-  const titleSize = Math.round(width * (format === "vertical" ? 0.028 : 0.02));
-  const textSize = Math.round(width * (format === "vertical" ? 0.048 : format === "square" ? 0.044 : 0.036));
-  const metaSize = Math.round(width * (format === "vertical" ? 0.023 : 0.018));
-
   targetCtx.fillStyle = highContrast ? "#ffffff" : "rgba(248,239,226,.92)";
   targetCtx.textAlign = "center";
   targetCtx.textBaseline = "middle";
@@ -1359,9 +1517,8 @@ function renderStoryFrame(targetCtx, width, height, text, localT, format="wide")
   targetCtx.fillText("SpectraMuse", width / 2, cardY + titleSize * 1.4);
 
   targetCtx.font = `800 ${textSize}px Courier New, monospace`;
-  const maxTextWidth = cardW * 0.78;
-  const lines = wrapLines(targetCtx, text, maxTextWidth).slice(0, 14);
-  const lineHeight = textSize * 1.32;
+  const lines = wrapLines(targetCtx, text, layout.maxTextWidth);
+  const lineHeight = layout.lineHeight;
   const textBlockHeight = Math.max(lineHeight, lines.length * lineHeight);
   let startY = cardY + cardH / 2 - textBlockHeight / 2 + lineHeight * .12;
 
@@ -1416,6 +1573,20 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function nextAnimationFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+function withTimeout(promise, ms, message) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
 function buildAudioChain(audioCtx, options = {}) {
   const { capture = false } = options;
   const masterGain = audioCtx.createGain();
@@ -1460,6 +1631,70 @@ function buildAudioChain(audioCtx, options = {}) {
 
 function connectSoundOutput(node, audioOut, audio) {
   node.connect(audioOut || audio.destination);
+}
+
+function startRecordingAudioBed(audio, audioOut, durationMs) {
+  const now = audio.currentTime;
+  const failSafeMs = Math.max(60000, durationMs + 60000);
+  const bedGain = audio.createGain();
+  const lowTone = audio.createOscillator();
+  const shimmer = audio.createOscillator();
+  let active = true;
+  let stopped = false;
+  let cleanupTimer = null;
+
+  lowTone.type = "sine";
+  shimmer.type = "triangle";
+  lowTone.frequency.setValueAtTime(92, now);
+  shimmer.frequency.setValueAtTime(184, now);
+  bedGain.gain.setValueAtTime(0.0001, now);
+  bedGain.gain.linearRampToValueAtTime(0.012, now + 0.25);
+
+  lowTone.connect(bedGain);
+  shimmer.connect(bedGain);
+  connectSoundOutput(bedGain, audioOut, audio);
+  lowTone.start(now);
+  shimmer.start(now);
+
+  function disconnect() {
+    if (!active) return;
+    active = false;
+    try { lowTone.disconnect(); } catch {}
+    try { shimmer.disconnect(); } catch {}
+    try { bedGain.disconnect(); } catch {}
+  }
+
+  cleanupTimer = setTimeout(() => {
+    if (stopped) return;
+    stopped = true;
+    try { lowTone.stop(); } catch {}
+    try { shimmer.stop(); } catch {}
+    disconnect();
+  }, failSafeMs);
+  lowTone.onended = () => {
+    if (cleanupTimer) clearTimeout(cleanupTimer);
+    cleanupTimer = setTimeout(disconnect, 250);
+  };
+
+  return {
+    get active() {
+      return active;
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      const stopAt = audio.currentTime + 0.12;
+      try {
+        bedGain.gain.cancelScheduledValues(audio.currentTime);
+        bedGain.gain.setTargetAtTime(0.0001, audio.currentTime, 0.025);
+        lowTone.stop(stopAt);
+        shimmer.stop(stopAt);
+      } catch {}
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+      cleanupTimer = setTimeout(disconnect, 300);
+    },
+    cleanup: disconnect
+  };
 }
 
 function shapeGain(gain, start, attack, hold, release, peak) {
@@ -1713,10 +1948,39 @@ function getFormatDims(format) {
   }[format] || [1920, 1080];
 }
 
-async function startRecorder(format, audio) {
+function getRecordingTypeCandidates() {
+  const supported = getSupportedRecordingTypes();
+  return [...supported, DEFAULT_RECORDING_TYPE];
+}
+
+function createStoryMediaRecorder(stream) {
+  let lastError = null;
+
+  for (const candidate of getRecordingTypeCandidates()) {
+    try {
+      const recorder = new MediaRecorder(stream, candidate.mimeType ? { mimeType: candidate.mimeType } : undefined);
+      const requestedMimeType = candidate.mimeType || recorder.mimeType || "";
+      const fileInfo = getRecordingFileInfo(recorder.mimeType || requestedMimeType, candidate);
+      return { recorder, requestedType: candidate, requestedMimeType, fileInfo };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error(unsupportedMessages.recording);
+}
+
+function getBlobTypeForExtension(extension) {
+  if (extension === "mp4") return "video/mp4";
+  if (extension === "ogv") return "video/ogg";
+  return "video/webm";
+}
+
+async function startRecorder(format, audio, options = {}) {
   if (!featureSupport.recording) throw new Error(unsupportedMessages.recording);
   if (!audio) throw new Error(unsupportedMessages.audioStart);
 
+  const { fileBaseName = "spectramuse-story" } = options;
   const [rw, rh] = getFormatDims(format);
   const recordCanvas = document.createElement("canvas");
   recordCanvas.width = rw;
@@ -1730,34 +1994,45 @@ async function startRecorder(format, audio) {
   const stream = recordCanvas.captureStream(30);
   chain.mediaDestination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
 
-  let mimeType = "";
-  const mimeOptions = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm"
-  ];
-  for (const type of mimeOptions) {
-    if (typeof MediaRecorder.isTypeSupported !== "function" || MediaRecorder.isTypeSupported(type)) {
-      mimeType = type;
-      break;
-    }
-  }
-
   const chunks = [];
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const recorderStats = {
+    startedAt: performance.now(),
+    stoppedAt: null,
+    chunks: 0,
+    bytes: 0,
+    finalDataRequested: false,
+    blobSize: 0
+  };
+  const recording = createStoryMediaRecorder(stream);
+  const { recorder } = recording;
   recorder.ondataavailable = e => {
-    if (e.data && e.data.size > 0) chunks.push(e.data);
+    if (e.data && e.data.size > 0) {
+      chunks.push(e.data);
+      recorderStats.chunks = chunks.length;
+      recorderStats.bytes += e.data.size;
+    }
   };
 
   const stopped = new Promise((resolve, reject) => {
     recorder.onerror = event => reject(event.error || new Error("Recording failed."));
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+      recorderStats.stoppedAt = performance.now();
+      const chunkMimeType = chunks.find(chunk => chunk.type)?.type || "";
+      const recordedMimeType = recorder.mimeType || chunkMimeType || recording.requestedMimeType || "";
+      const fileInfo = getRecordingFileInfo(recordedMimeType, recording.fileInfo);
+      const blobType = recordedMimeType || getBlobTypeForExtension(fileInfo.extension);
+      const blob = new Blob(chunks, { type: blobType });
+      const filename = `${fileBaseName}.${fileInfo.extension}`;
+      recorderStats.blobSize = blob.size;
+      if (!blob.size) {
+        reject(new Error("Recording produced an empty video file."));
+        return;
+      }
       lastRecordedBlob = blob;
       const url = URL.createObjectURL(blob);
-      triggerDownload(url, `spectramuse-${format}.webm`);
+      triggerDownload(url, filename);
       setTimeout(() => URL.revokeObjectURL(url), 3000);
-      resolve(blob);
+      resolve({ blob, fileInfo, filename, stats: { ...recorderStats } });
     };
   });
 
@@ -1770,26 +2045,67 @@ async function startRecorder(format, audio) {
     canvas: recordCanvas,
     ctx: rctx,
     format,
+    recording,
+    stream,
+    stats: recorderStats,
     stopped
   };
   activeRecordingMode = true;
-  statusEl.textContent = `Recording ${format} video...`;
+  statusEl.textContent = recording.fileInfo.extension === "mp4"
+    ? `Recording ${format} MP4 video...`
+    : `Recording ${format} video as ${recording.fileInfo.label}...`;
   return activeRecorder;
 }
 
 async function stopRecorder() {
   if (!activeRecorder) return null;
   const local = activeRecorder;
-  activeRecorder = null;
-  activeRecordingMode = false;
+
+  if (local.ctx && local.canvas) {
+    renderStoryFrame(local.ctx, local.canvas.width, local.canvas.height, currentDisplayText, t, local.format);
+    await nextAnimationFrame();
+  }
+
   try {
-    if (local.recorder.state !== "inactive") local.recorder.stop();
+    if (local.recorder.state !== "inactive") {
+      if (typeof local.recorder.requestData === "function") {
+        try {
+          local.stats.finalDataRequested = true;
+          local.recorder.requestData();
+        } catch {}
+      }
+      local.recorder.stop();
+    }
   } catch {}
   try {
-    const blob = await local.stopped;
-    statusEl.textContent = "Recording saved as .webm";
-    return blob;
+    const result = await withTimeout(
+      local.stopped,
+      RECORDER_STOP_TIMEOUT_MS,
+      "Recording finalization timed out before the browser delivered the final video chunk."
+    );
+    if (result.fileInfo && result.fileInfo.extension === "mp4") {
+      statusEl.textContent = `Recording saved as ${result.filename}.`;
+    } else {
+      statusEl.textContent = "MP4 is not supported in this browser, so your story was saved as WebM instead.";
+    }
+    if (lastExportStats) {
+      lastExportStats.actualRecordingMs = result.stats.stoppedAt - result.stats.startedAt;
+      lastExportStats.recorderChunks = result.stats.chunks;
+      lastExportStats.blobSize = result.stats.blobSize;
+      lastExportStats.finalDataRequested = result.stats.finalDataRequested;
+      lastExportStats.downloadFilename = result.filename;
+      lastExportStats.downloadType = result.blob.type;
+      window.__spectramuseLastExportStats = lastExportStats;
+    }
+    return result.blob;
   } finally {
+    activeRecorder = null;
+    activeRecordingMode = false;
+    if (local.stream) {
+      local.stream.getTracks().forEach(track => {
+        try { track.stop(); } catch {}
+      });
+    }
     if (local.chain) local.chain.cleanup();
   }
 }
@@ -1813,50 +2129,129 @@ async function performStory(options = {}) {
   isPerforming = true;
   refreshActionAvailability();
 
-  const scenes = currentOnly ? [getScenes(text).slice(-1)[0]] : getScenes(text);
   let audio = null;
   let outputChain = null;
+  let audioBed = null;
 
   try {
     audio = await createStartedAudioContext();
     let outputNode = null;
+    let segments = null;
+
     if (record) {
-      const rec = await startRecorder(formatSelect.value, audio);
+      const rec = await startRecorder(formatSelect.value, audio, {
+        fileBaseName: currentOnly ? "spectramuse-scene" : "spectramuse-story"
+      });
       outputNode = rec.audioOut;
+      segments = buildStorySegments(text, {
+        currentOnly,
+        targetCtx: rec.ctx,
+        width: rec.canvas.width,
+        height: rec.canvas.height,
+        format: rec.format
+      });
+
+      const sourceScenes = currentOnly ? getScenes(text).slice(-1) : getScenes(text);
+      const expectedLineCount = sourceScenes.reduce((sum, scene) => {
+        return sum + measureStoryLines(rec.ctx, scene, rec.canvas.width, rec.canvas.height, rec.format).length;
+      }, 0);
+      const renderedLineCount = segments.reduce((sum, segment) => {
+        return sum + measureStoryLines(rec.ctx, segment.text, rec.canvas.width, rec.canvas.height, rec.format).length;
+      }, 0);
+      const expectedDurationMs = getExpectedPerformanceDurationMs(segments, { record: true });
+      const finalSegment = segments[segments.length - 1] || null;
+
+      lastExportStats = {
+        sourceScenes: sourceScenes.length,
+        renderedSegments: segments.length,
+        expectedWords: segments.reduce((sum, segment) => sum + getWords(segment.text).length, 0),
+        expectedLineCount,
+        renderedLineCount,
+        expectedDurationMs,
+        finalTextExpected: finalSegment ? finalSegment.text : "",
+        finalTextRendered: "",
+        finalLineRendered: false,
+        audioBedActiveThroughFinalFrame: false,
+        recorderChunks: 0,
+        blobSize: 0
+      };
+      window.__spectramuseLastExportStats = lastExportStats;
+
+      audioBed = startRecordingAudioBed(audio, outputNode, expectedDurationMs);
+
+      if (finalSegment) {
+        currentDisplayText = segments[0].text;
+        renderLineDisplayText(currentDisplayText);
+        renderStoryFrame(rec.ctx, rec.canvas.width, rec.canvas.height, currentDisplayText, t, rec.format);
+        statusEl.textContent = `Recording story video: 1/${segments.length}`;
+        await sleep(STORY_INTRO_HOLD_MS);
+      }
     } else {
       outputChain = buildAudioChain(audio);
       outputNode = outputChain.masterGain;
+      segments = buildStorySegments(text, { currentOnly });
     }
 
-    for (let s = 0; s < scenes.length; s++) {
+    for (let s = 0; s < segments.length; s++) {
       if (token !== performanceToken) break;
-      const scene = scenes[s];
-      const words = getWords(scene);
-      currentDisplayText = scene;
-      renderLineDisplayText(scene);
+      const segment = segments[s];
+      const words = getWords(segment.text);
+      currentDisplayText = segment.text;
+      renderLineDisplayText(segment.text);
 
       for (let i = 0; i < words.length; i++) {
         if (token !== performanceToken) break;
         const w = words[i];
         analyze(w);
         playWordSound(w, 0, audio, outputNode);
-        statusEl.textContent = `${record ? "Recording" : "Performing"} scene ${s + 1}/${scenes.length}: ${w}`;
-        await sleep(360);
+        statusEl.textContent = `${record ? "Recording" : "Performing"} story ${s + 1}/${segments.length}: ${w}`;
+        await sleep(STORY_WORD_MS);
       }
-      await sleep(420);
+      await sleep(STORY_SEGMENT_HOLD_MS);
     }
 
     statusEl.textContent = record ? "Finalizing video..." : "Performance complete.";
-    await sleep(700);
+    if (record && segments.length) {
+      const finalSegment = segments[segments.length - 1];
+      currentDisplayText = finalSegment.text;
+      renderLineDisplayText(finalSegment.text);
+      if (activeRecorder && activeRecorder.ctx) {
+        renderStoryFrame(activeRecorder.ctx, activeRecorder.canvas.width, activeRecorder.canvas.height, finalSegment.text, t, activeRecorder.format);
+      }
+      await sleep(STORY_FINAL_HOLD_MS);
+      if (lastExportStats) {
+        lastExportStats.finalTextRendered = finalSegment.text;
+        lastExportStats.finalLineRendered = true;
+        lastExportStats.audioBedActiveThroughFinalFrame = Boolean(audioBed && audioBed.active);
+        window.__spectramuseLastExportStats = lastExportStats;
+      }
+    } else {
+      await sleep(STORY_SEGMENT_HOLD_MS);
+    }
   } catch (error) {
     const failedFeature = !audio ? "audioStart" : record ? "recording" : "audioStart";
     const failureMessage = record
       ? "Recording could not start in this browser."
       : "Audio could not start in this browser.";
-    markFeatureUnsupported(failedFeature, failureMessage);
+    if (record && /finalization timed out/i.test(error.message || "")) {
+      statusEl.textContent = error.message;
+    } else {
+      markFeatureUnsupported(failedFeature, failureMessage);
+    }
   } finally {
     if (record) {
-      try { await stopRecorder(); } catch {}
+      try {
+        await stopRecorder();
+      } catch (error) {
+        statusEl.textContent = error && error.message
+          ? error.message
+          : "Recording could not be finalized in this browser.";
+        if (lastExportStats) {
+          lastExportStats.finalizationError = statusEl.textContent;
+          window.__spectramuseLastExportStats = lastExportStats;
+        }
+      }
+      if (audioBed) audioBed.stop();
     }
     if (outputChain) outputChain.cleanup();
     try { if (audio) await audio.close(); } catch {}
